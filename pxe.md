@@ -106,8 +106,112 @@ kickstart配置文件编写前需准备centos的基础源：**base**
 在centos7系统上安装kickstart并运行创建配置文件
 
 ```
+#platform=x86, AMD64, or Intel EM64T
+#version=DEVEL
+# Install OS instead of upgrade
+install
+# Keyboard layouts
+keyboard 'us'
+# Root password
+rootpw --iscrypted $1$i5xGQgfg$Ar6fz7Xcv..KAPK3ISu/a.
+# Use network installation
+url --url="http://mirror.t.com/centos/base/"
+# System language
+lang en_US
+# System authorization information
+auth  --useshadow  --passalgo=sha512
+# Use text mode install
+text
+# SELinux configuration
+selinux --disabled
+# Do not configure the X Window System
+skipx
+ 
+# Firewall configuration
+firewall --disabled
+# Network information
+network  --bootproto=dhcp --device=eth0
+# Reboot after installation
+reboot
+# System timezone
+timezone Asia/Hong_Kong
+# System bootloader configuration
+bootloader --location=mbr
+# Partition clearing information
+clearpart --none --initlabel
+# Disk partitioning information
+part pv.253 --fstype="lvmpv" --ondisk=sda --size=1 --grow
+part /boot --fstype="xfs" --ondisk=sda --size=1024
+volgroup centos --pesize=4096 pv.253
+logvol none  --fstype="None" --size=1 --grow --thinpool --metadatasize=16 --chunksize=65536 --name=pool00 --vgname=centos
+logvol swap  --fstype="swap" --size=1024 --name=swap --vgname=centos
+logvol /  --fstype="xfs" --size=1 --grow --thin --poolname=pool00 --name=root --vgname=centos
+ 
+%packages
+ 
+@core
+perl
+wget
+bind-utils
+net-tools
+telnet
+ 
+%end
+ 
+ 
+%addon com_redhat_kdump --disable
+ 
+ 
+%end
+ 
+ 
+#%post --nochroot
+#hostnamectl set-hostname $(cat /sys/class/net/ens192/address | sed 's/://g' | cut -c 7-12)
 #
+#%end
+ 
+%post
+ 
+#echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
+#echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.conf
+echo "curl -fsSL "http://mirror.t.com/ngx-shell/ngx-pxe-setting-script.sh " | /bin/sh" >> /etc/rc.local
+chmod +x /etc/rc.d/rc.local
+rm -f /etc/yum.repos.d/*
+curl mirror.t.com/home.repo > /etc/yum.repos.d/home.repo
+yum clean all && yum install epel-release -y && rm -f /etc/yum.repos.d/epel* &&  yum update -y
+rm -f /etc/yum.repos.d/CentOS-* && rm -f /etc/yum.repos.d/epel*
+mkdir /tmp/vmtools \
+  && wget http://mirror.t.com/vmtools/latest.tar.gz -O /tmp/vmtools/latest.tar.gz \
+  && tar zxvf /tmp/vmtools/latest.tar.gz -C /tmp/vmtools \
+  && /tmp/vmtools/vmware-tools-distrib/vmware-install.pl -d \
+  && rm -rf /tmp/vmtools
+ 
+%end
 ```
 
+
+
 url为镜像地址
-可以用清华大学的镜像站，也可以自己在内网部署一个镜像站
+可以用清华大学的镜像站，也可以自己在内网部署一个镜像站  
+
+text：使用text模式安装而不加载GUI  
+
+分区：分为3个区  
+
+- swap：1GB
+- boot：1GB
+- /：剩下的空间
+
+- packages：最小化安装（core）并安装wget与curl
+- addon：关闭kdump
+- post：
+  - 用私有的repo替换官方的repo文件
+  - 升级系统
+  - 安装vmtools
+
+因为系统更新需要很长的时间，所以部署起来需要3到4分钟，所有流程完成后会自动重启  
+
+编写完kickstart的配置文件后将其放置在pxelinux.cfg目录下default文件中“inst.ks”值所对应的目录中即可，该步骤不需要重启tftp，但需要确认能通过http服务访问  
+
+
+
